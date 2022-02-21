@@ -198,13 +198,9 @@ pub trait Listener: Send {
     where
         Self: Sized + 'static,
     {
-        Box::new(WrappedListener(self))
+        Box::new(BoxListener::new(self))
     }
 }
-
-/// An owned dynamically typed Listener for use in cases where you can’t
-/// statically type your result or need to add some indirection.
-pub type BoxListener = Box<dyn Listener<Acceptor = BoxAcceptor>>;
 
 #[async_trait::async_trait]
 impl Listener for Infallible {
@@ -212,6 +208,15 @@ impl Listener for Infallible {
 
     async fn into_acceptor(self) -> IoResult<Self::Acceptor> {
         unreachable!()
+    }
+}
+
+#[async_trait::async_trait]
+impl<T: Listener + Sized> Listener for Box<T> {
+    type Acceptor = T::Acceptor;
+
+    async fn into_acceptor(self) -> IoResult<Self::Acceptor> {
+        (*self).into_acceptor().await
     }
 }
 
@@ -289,7 +294,9 @@ impl AsyncWrite for BoxIo {
     }
 }
 
-struct WrappedListener<T: Listener>(T);
+/// An owned dynamically typed Listener for use in cases where you can’t
+/// statically type your result or need to add some indirection.
+struct BoxedListener<T: Listener>(T);
 
 #[async_trait::async_trait]
 impl<T: Listener> Listener for WrappedListener<T>
